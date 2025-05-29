@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Learning by Matching!</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#007bff',
+                        secondary: '#28a745',
+                        accent: '#ffc107',
+                        neutral: '#f8f9fa',
+                        dark: '#343a40',
+                        disabled: '#e9ecef'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .card-hover {
+                @apply transition-all duration-300 hover:shadow-lg hover:-translate-y-1;
+            }
+            .connection-line {
+                @apply absolute rounded-full pointer-events-none z-10;
+            }
+            .connection-line path {
+                stroke-width: 3;
+                fill: none;
+                transition: stroke-dashoffset 0.5s ease-in-out;
+            }
+            .connection-line.correct path {
+                stroke: #28a745;
+            }
+            .connection-line.incorrect path {
+                stroke: #dc3545;
+            }
+            .connection-line.initial path {
+                stroke: #ffc107;
+            }
+            .person-complete {
+                @apply opacity-50 pointer-events-none;
+            }
+            .info-complete {
+                @apply opacity-50 cursor-not-allowed;
+            }
+            .toast {
+                @apply fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 px-6 py-4 rounded-lg shadow-lg z-50 text-white font-bold text-lg;
+            }
+            .toast-success {
+                @apply bg-green-500;
+            }
+            .toast-error {
+                @apply bg-red-500;
+            }
+            .info-text {
+                @apply text-lg font-medium; /* 修改：将text-sm改为text-lg，与左侧人名相同 */
+            }
+            .info-text-cn {
+                @apply text-xs text-gray-500 mt-1;
+            }
+            .volume-slider-container {
+                @apply fixed bottom-4 left-4 bg-white p-3 rounded-lg shadow-md z-30 flex items-center gap-2;
+            }
+            .volume-slider {
+                @apply w-32 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer;
+            }
+            .volume-slider::-webkit-slider-thumb {
+                @apply appearance-none w-4 h-4 rounded-full bg-primary cursor-pointer;
+            }
+        }
+    </style>
+    <style>
+        body {
+            background-image: url('背景.png');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+        }
+        
+        /* 撒花特效样式 */
+        .confetti {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 100;
+            display: none;
+        }
+        
+        .confetti-piece {
+            position: absolute;
+            width: 10px;
+            height: 30px;
+            background: #ff6b6b;
+            opacity: 0;
+            animation: confetti-fall 3s ease-in-out forwards;
+        }
+        
+        @keyframes confetti-fall {
+            0% {
+                transform: translateY(-100vh) rotate(0deg);
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(100vh) rotate(720deg);
+                opacity: 0;
+            }
+        }
+        
+        /* 游戏结束弹窗样式 */
+        #game-over-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s ease-in-out;
+        }
+        
+        #game-over-modal.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        
+        .modal-content {
+            background-color: white;
+            padding: 40px;
+            border-radius: 16px;
+            text-align: center;
+            max-width: 500px;
+            transform: scale(0.8);
+            transition: transform 0.5s ease-in-out;
+        }
+        
+        #game-over-modal.active .modal-content {
+            transform: scale(1);
+        }
+        
+        .modal-title {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #007bff;
+            margin-bottom: 20px;
+        }
+        
+        .modal-message {
+            font-size: 1.2rem;
+            margin-bottom: 30px;
+        }
+        
+        .modal-stats {
+            font-size: 1.1rem;
+            margin-bottom: 30px;
+            color: #666;
+        }
+        
+        .modal-button {
+            background-color: #007bff;
+            color: white;
+            font-size: 1.2rem;
+            padding: 10px 30px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        
+        .modal-button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+
+<body class="min-h-screen font-sans">
+    <!-- 游戏标题区域 -->
+    <header class="bg-white/70 text-dark shadow-md backdrop-blur-sm">
+        <div class="container mx-auto py-4 px-4">
+            <h1 class="text-[clamp(1.5rem,3vw,2.5rem)] font-bold text-center">Learning by Matching!</h1>
+        </div>
+    </header>
+
+    <!-- 游戏主区域 -->
+    <main class="container mx-auto py-8 px-4">
+        <div class="flex flex-col md:flex-row gap-8">
+            <!-- 左侧人物卡片区 -->
+            <div id="left-section" class="w-full md:w-1/2">
+                <h2 class="text-xl font-bold text-dark mb-4 flex items-center">
+                    <i class="fa fa-users mr-2 text-primary"></i>Who
+                </h2>
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    <div class="person-card bg-white rounded-lg shadow-md overflow-hidden card-hover" data-id="CharlesDarwin">
+                        <img src="达尔文.jpeg" alt="Charles Darwin" class="w-full h-40 object-cover">
+                        <div class="p-4">
+                            <h3 class="font-bold text-lg text-dark">Charles Darwin</h3>
+                        </div>
+                    </div>
+                    <div class="person-card bg-white rounded-lg shadow-md overflow-hidden card-hover" data-id="NelsonMandela">
+                        <img src="曼德拉.jpeg" alt="Nelson Mandela" class="w-full h-40 object-cover">
+                        <div class="p-4">
+                            <h3 class="font-bold text-lg text-dark">Nelson Mandela</h3>
+                        </div>
+                    </div>
+                    <div class="person-card bg-white rounded-lg shadow-md overflow-hidden card-hover" data-id="TuYouyou">
+                        <img src="屠呦呦.jpeg" alt="Tu Youyou" class="w-full h-40 object-cover">
+                        <div class="p-4">
+                            <h3 class="font-bold text-lg text-dark">Tu Youyou</h3>
+                        </div>
+                    </div>
+                    <div class="person-card bg-white rounded-lg shadow-md overflow-hidden card-hover" data-id="XuXiake">
+                        <img src="徐霞客.png" alt="Xu Xiake" class="w-full h-40 object-cover">
+                        <div class="p-4">
+                            <h3 class="font-bold text-lg text-dark">Xu Xiake</h3>
+                        </div>
+                    </div>
+                    <div class="person-card bg-white rounded-lg shadow-md overflow-hidden card-hover" data-id="LiJun">
+                        <img src="李华.jpeg" alt="Li Jun" class="w-full h-40 object-cover">
+                        <div class="p-4">
+                            <h3 class="font-bold text-lg text-dark">Li Jun</h3>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧信息点卡牌区 -->
+            <div id="right-section" class="w-full md:w-1/2">
+                <h2 class="text-xl font-bold text-dark mb-4 flex items-center">
+                    <i class="fa fa-lightbulb-o mr-2 text-primary"></i>Information
+                </h2>
+                <div class="space-y-4">
+                    <div class="category bg-white p-4 rounded-lg shadow-md" data-category="location">
+                        <h3 class="font-bold text-lg text-primary mb-3 flex items-center">
+                            <i class="fa fa-map-marker mr-2"></i>Where did the learning happen?
+                        </h3>
+                        <div id="location-cards" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <!-- 地点信息点将通过JS随机排序 -->
+                        </div>
+                    </div>
+
+                    <div class="category bg-white p-4 rounded-lg shadow-md" data-category="process">
+                        <h3 class="font-bold text-lg text-primary mb-3 flex items-center">
+                            <i class="fa fa-cogs mr-2"></i>What did he/she do?
+                        </h3>
+                        <div id="process-cards" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <!-- 过程信息点将通过JS随机排序 -->
+                        </div>
+                    </div>
+
+                    <div class="category bg-white p-4 rounded-lg shadow-md" data-category="gain">
+                        <h3 class="font-bold text-lg text-primary mb-3 flex items-center">
+                            <i class="fa fa-trophy mr-2"></i>What did he/ she learn?
+                        </h3>
+                        <div id="gain-cards" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <!-- 收获信息点将通过JS随机排序 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 游戏控制面板 -->
+        <div class="mt-8 flex justify-center">
+            <button id="reset-button" class="bg-primary hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition-all duration-200 flex items-center">
+                <i class="fa fa-refresh mr-2"></i>重新开始
+            </button>
+        </div>
+    </main>
+
+    <!-- 底部提示栏 -->
+    <footer class="bg-white/70 text-dark py-6 mt-auto backdrop-blur-sm">
+        <div class="container mx-auto px-4 text-center">
+            <p class="text-base font-medium italic">Real knowledge is to know the extent of one’s ignorance.</p>
+            <p class="text-sm mt-1">— Confucius</p>
+        </div>
+    </footer>
+
+    <!-- 中间弹窗提示 -->
+    <div id="toast" class="toast hidden"></div>
+    
+    <!-- 撒花特效容器 -->
+    <div id="confetti" class="confetti"></div>
+    
+    <!-- 游戏结束弹窗 -->
+    <div id="game-over-modal" class="fixed inset-0 flex items-center justify-center z-50">
+        <div class="modal-content bg-white rounded-xl p-8 shadow-2xl transform transition-all duration-300">
+            <h2 class="modal-title text-primary">Congratulations!</h2>
+            <p class="modal-message">你已成功完成所有匹配！</p>
+            <div class="modal-stats">
+                <p>正确匹配: <span id="correct-stats">0</span></p>
+                <p>总尝试次数: <span id="total-stats">0</span></p>
+                <p>准确率: <span id="accuracy-stats">0%</span></p>
+            </div>
+            <button id="play-again-button" class="modal-button">再玩一次</button>
+        </div>
+    </div>
+
+    <!-- 音效元素 -->
+    <audio id="success-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-correct-answer-tone-2870.mp3"></audio>
+    <audio id="fail-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-wrong-answer-fail-notification-946.mp3"></audio>
+    <audio id="celebration-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-cheering-crowd-438.mp3"></audio>
+
+    <!-- 音量控制滑块 -->
+    <div class="volume-slider-container">
+        <i id="volume-icon" class="fa fa-volume-up text-primary"></i>
+        <input type="range" id="volume-slider" class="volume-slider" min="0" max="100" value="30">
+        <span id="volume-value" class="text-sm text-gray-700">30%</span>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // 游戏状态
+            const gameState = {
+                selectedPerson: null,
+                selectedInfo: null,
+                connections: [],
+                correctConnections: 0,
+                totalConnections: 0,
+                personCompleted: {
+                    CharlesDarwin: false,
+                    NelsonMandela: false,
+                    TuYouyou: false,
+                    XuXiake: false,
+                    LiJun: false
+                },
+                soundEnabled: true,
+                volume: 30
+            };
+
+            // 正确匹配关系
+            const correctMatches = {
+                "CharlesDarwin": {
+                    location: "OceanAndLandOnGlobalVoyage",
+                    process: "CollectedSpecimensKeptDiaries",
+                    gain: "UnderstoodScientificResearchMethods"
+                },
+                "NelsonMandela": {
+                    location: "Field",
+                    process: "TriedToTameADonkey",
+                    gain: "LearnedTheValueOfDignity"
+                },
+                "TuYouyou": {
+                    location: "Lab",
+                    process: "ConsultedAncientBooksExperimentedWithHerbs",
+                    gain: "DiscoveredArtemisinin"
+                },
+                "XuXiake": {
+                    location: "MountainsAndRivers",
+                    process: "ClimbedMountainsTookNotes",
+                    gain: "EnrichedGeographicalKnowledge"
+                },
+                "LiJun": {
+                    location: "ArtClub",
+                    process: "FoldPaperToCreateThings",
+                    gain: "DesignPriciples"
+                }
+            };
+
+            // 信息点数据
+            const infoData = {
+                location: [
+                    { id: "OceanAndLandOnGlobalVoyage", text: "Ocean and Land on Global Voyage", cn: "环球海洋与陆地" },
+                    { id: "Field", text: "Field", cn: "田野" },
+                    { id: "Lab", text: "Lab", cn: "实验室" },
+                    { id: "MountainsAndRivers", text: "Mountains and Rivers", cn: "山川河流" },
+                    { id: "ArtClub", text: "Art Club", cn: "艺术社团" }
+                ],
+                process: [
+                    { id: "CollectedSpecimensKeptDiaries", text: "Collected specimens, kept diaries", cn: "采集标本，记录日记" },
+                    { id: "TriedToTameADonkey", text: "Tried to tame a donkey", cn: "尝试驯服驴驹" },
+                    { id: "ConsultedAncientBooksExperimentedWithHerbs", text: "Consulted ancient books, experimented with herbs", cn: "查阅古籍，草药实验" },
+                    { id: "ClimbedMountainsTookNotes", text: "Climbed mountains, took notes", cn: "攀登山川，记录笔记" },
+                    { id: "FoldPaperToCreateThings", text: "Fold paper to create things", cn: "折纸，做手工" }
+                ],
+                gain: [
+                    { id: "UnderstoodScientificResearchMethods", text: "Understood scientific research methods", cn: "理解科学研究方法" },
+                    { id: "LearnedTheValueOfDignity", text: "Learned the value of dignity", cn: "领悟尊严的价值" },
+                    { id: "DiscoveredArtemisinin", text: "Discovered artemisinin", cn: "发现青蒿素" },
+                    { id: "EnrichedGeographicalKnowledge", text: "Enriched geographical knowledge", cn: "丰富地理认知" },
+                    { id: "DesignPriciples", text: "Design Principles", cn: "设计原理" }
+                ]
+            };
+
+            // 获取DOM元素
+            const personCards = document.querySelectorAll('.person-card');
+            const resetButton = document.getElementById('reset-button');
+            const successSound = document.getElementById('success-sound');
+            const failSound = document.getElementById('fail-sound');
+            const celebrationSound = document.getElementById('celebration-sound');
+            const volumeSlider = document.getElementById('volume-slider');
+            const volumeValue = document.getElementById('volume-value');
+            const volumeIcon = document.getElementById('volume-icon');
+            const toast = document.getElementById('toast');
+            const confetti = document.getElementById('confetti');
+            const gameOverModal = document.getElementById('game-over-modal');
+            const playAgainButton = document.getElementById('play-again-button');
+            const correctStats = document.getElementById('correct-stats');
+            const totalStats = document.getElementById('total-stats');
+            const accuracyStats = document.getElementById('accuracy-stats');
+            
+            // 信息点容器
+            const locationCardsContainer = document.getElementById('location-cards');
+            const processCardsContainer = document.getElementById('process-cards');
+            const gainCardsContainer = document.getElementById('gain-cards');
+
+            // 初始化游戏
+            initGame();
+
+            // 设置初始音量
+            setVolume(gameState.volume);
+
+            // 添加点击事件
+            personCards.forEach(card => {
+                card.addEventListener('click', () => selectPerson(card));
+            });
+
+            resetButton.addEventListener('click', resetGame);
+            volumeSlider.addEventListener('input', adjustVolume);
+            playAgainButton.addEventListener('click', resetGame);
+
+            // 初始化游戏 - 随机排序信息点
+            function initGame() {
+                // 隐藏游戏结束弹窗
+                gameOverModal.classList.remove('active');
+                
+                // 随机排序信息点
+                shuffleInfoCards();
+                
+                // 绑定信息点卡片事件
+                bindInfoCardEvents();
+            }
+
+            // 随机排序信息点
+            function shuffleInfoCards() {
+                // 清空容器
+                locationCardsContainer.innerHTML = '';
+                processCardsContainer.innerHTML = '';
+                gainCardsContainer.innerHTML = '';
+                
+                // 随机排序并添加地点信息点
+                const shuffledLocation = shuffleArray(infoData.location);
+                shuffledLocation.forEach(info => {
+                    const card = createInfoCard(info);
+                    locationCardsContainer.appendChild(card);
+                });
+                
+                // 随机排序并添加过程信息点
+                const shuffledProcess = shuffleArray(infoData.process);
+                shuffledProcess.forEach(info => {
+                    const card = createInfoCard(info);
+                    processCardsContainer.appendChild(card);
+                });
+                
+                // 随机排序并添加收获信息点
+                const shuffledGain = shuffleArray(infoData.gain);
+                shuffledGain.forEach(info => {
+                    const card = createInfoCard(info);
+                    gainCardsContainer.appendChild(card);
+                });
+            }
+            
+            // 创建信息点卡片
+            function createInfoCard(info) {
+                const card = document.createElement('div');
+                card.className = 'info-card bg-neutral hover:bg-blue-50 p-3 rounded-md cursor-pointer transition-all duration-200';
+                card.dataset.id = info.id;
+                
+                const text = document.createElement('p');
+                text.className = 'info-text';
+                text.textContent = info.text;
+                
+                const cnText = document.createElement('p');
+                cnText.className = 'info-text-cn';
+                cnText.textContent = info.cn;
+                
+                card.appendChild(text);
+                card.appendChild(cnText);
+                
+                return card;
+            }
+            
+            // 绑定信息点卡片事件
+            function bindInfoCardEvents() {
+                const infoCards = document.querySelectorAll('.info-card');
+                infoCards.forEach(card => {
+                    card.addEventListener('click', () => selectInfo(card));
+                });
+            }
+
+            // 随机打乱数组
+            function shuffleArray(array) {
+                const newArray = [...array];
+                for (let i = newArray.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+                }
+                return newArray;
+            }
+
+            // 选择人物
+            function selectPerson(card) {
+                // 检查人物是否已完成所有匹配
+                const personId = card.dataset.id;
+                if (gameState.personCompleted[personId]) {
+                    return; // 已完成的人物不可选择
+                }
+                
+                // 如果已经选择了人物，取消选择
+                if (gameState.selectedPerson === card) {
+                    card.classList.remove('bg-blue-100');
+                    gameState.selectedPerson = null;
+                    return;
+                }
+
+                // 清除之前的选择
+                if (gameState.selectedPerson) {
+                    gameState.selectedPerson.classList.remove('bg-blue-100');
+                }
+
+                // 设置新选择
+                card.classList.add('bg-blue-100');
+                gameState.selectedPerson = card;
+                
+                // 如果已经选择了信息点，尝试连线
+                if (gameState.selectedInfo) {
+                    createConnection();
+                }
+            }
+
+            // 选择信息点
+            function selectInfo(card) {
+                // 如果已经选择了信息点，取消选择
+                if (gameState.selectedInfo === card) {
+                    card.classList.remove('bg-blue-100');
+                    gameState.selectedInfo = null;
+                    return;
+                }
+
+                // 清除之前的选择
+                if (gameState.selectedInfo) {
+                    gameState.selectedInfo.classList.remove('bg-blue-100');
+                }
+
+                // 设置新选择
+                card.classList.add('bg-blue-100');
+                gameState.selectedInfo = card;
+                
+                // 如果已经选择了人物，尝试连线
+                if (gameState.selectedPerson) {
+                    createConnection();
+                }
+            }
+
+            // 创建连线
+            function createConnection() {
+                const personCard = gameState.selectedPerson;
+                const infoCard = gameState.selectedInfo;
+                const personId = personCard.dataset.id;
+                const infoId = infoCard.dataset.id;
+                
+                // 获取信息点类别
+                const category = infoCard.closest('.category').dataset.category;
+                
+                // 创建SVG连线
+                const connectionLine = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+                connectionLine.className = 'connection-line initial';
+                connectionLine.style.position = 'absolute';
+                connectionLine.style.top = '0';
+                connectionLine.style.left = '0';
+                connectionLine.style.width = '100%';
+                connectionLine.style.height = '100%';
+                connectionLine.style.zIndex = '10';
+                connectionLine.style.pointerEvents = 'none';
+                
+                const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                path.setAttribute('stroke', '#ffc107');
+                path.setAttribute('stroke-width', '3');
+                path.setAttribute('fill', 'none');
+                path.setAttribute('stroke-dasharray', '1000');
+                path.setAttribute('stroke-dashoffset', '1000');
+                
+                connectionLine.appendChild(path);
+                document.body.appendChild(connectionLine);
+                
+                // 获取元素位置
+                const personRect = personCard.getBoundingClientRect();
+                const infoRect = infoCard.getBoundingClientRect();
+                const svgRect = document.body.getBoundingClientRect();
+                const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+                
+                // 计算连线的起点和终点（相对于SVG）
+                const startX = personRect.right - svgRect.left;
+                const startY = personRect.top + personRect.height / 2 - svgRect.top + scrollTop;
+                const endX = infoRect.left - svgRect.left;
+                const endY = infoRect.top + infoRect.height / 2 - svgRect.top + scrollTop;
+                
+                // 计算贝塞尔曲线控制点
+                const controlPoint1X = startX + (endX - startX) / 3;
+                const controlPoint1Y = startY;
+                const controlPoint2X = startX + 2 * (endX - startX) / 3;
+                const controlPoint2Y = endY;
+                
+                // 设置路径
+                path.setAttribute('d', `M ${startX},${startY} C ${controlPoint1X},${controlPoint1Y} ${controlPoint2X},${controlPoint2Y} ${endX},${endY}`);
+                
+                // 触发动画
+                setTimeout(() => {
+                    path.setAttribute('stroke-dashoffset', '0');
+                }, 10);
+                
+                // 检查匹配是否正确
+                let isCorrect = false;
+                if (category === 'location' && correctMatches[personId].location === infoId) {
+                    isCorrect = true;
+                } else if (category === 'process' && correctMatches[personId].process === infoId) {
+                    isCorrect = true;
+                } else if (category === 'gain' && correctMatches[personId].gain === infoId) {
+                    isCorrect = true;
+                }
+                
+                // 更新游戏统计
+                gameState.totalConnections++;
+                
+                // 播放音效
+                if (isCorrect && gameState.soundEnabled) {
+                    playSound(successSound);
+                    showToast("匹配正确！", "success");
+                } else if (!isCorrect && gameState.soundEnabled) {
+                    playSound(failSound);
+                    showToast("匹配错误，请重试", "error");
+                }
+                
+                // 更新连线样式
+                setTimeout(() => {
+                    connectionLine.classList.remove('initial');
+                    connectionLine.classList.add(isCorrect ? 'correct' : 'incorrect');
+                }, 500);
+                
+                // 连线动画效果
+                setTimeout(() => {
+                    // 移除连线
+                    if (connectionLine.parentNode) {
+                        connectionLine.parentNode.removeChild(connectionLine);
+                    }
+                    
+                    if (isCorrect) {
+                        gameState.correctConnections++;
+                        
+                        // 添加成功样式
+                        personCard.classList.add('border-secondary');
+                        infoCard.classList.add('info-complete');
+                        infoCard.classList.remove('cursor-pointer');
+                        infoCard.removeEventListener('click', () => selectInfo(infoCard));
+                        
+                        // 记录正确连接
+                        gameState.connections.push({
+                            personId: personId,
+                            infoId: infoId,
+                            category: category,
+                            isCorrect: true
+                        });
+                        
+                        // 检查该人物是否已完成所有匹配
+                        checkPersonCompletion(personId);
+                        
+                        // 检查游戏是否完成
+                        checkGameCompletion();
+                    } else {
+                        // 记录错误连接
+                        gameState.connections.push({
+                            personId: personId,
+                            infoId: infoId,
+                            category: category,
+                            isCorrect: false
+                        });
+                    }
+                    
+                    // 清除选择
+                    personCard.classList.remove('bg-blue-100');
+                    infoCard.classList.remove('bg-blue-100');
+                    gameState.selectedPerson = null;
+                    gameState.selectedInfo = null;
+                }, 1500);
+            }
+
+            // 检查人物是否已完成所有匹配
+            function checkPersonCompletion(personId) {
+                // 获取该人物已正确匹配的信息点
+                const personConnections = gameState.connections.filter(
+                    conn => conn.personId === personId && conn.isCorrect
+                );
+                
+                // 如果该人物已匹配3个信息点（地点、过程、收获），则标记为已完成
+                if (personConnections.length === 3) {
+                    gameState.personCompleted[personId] = true;
+                    
+                    // 获取人物卡片并添加完成样式
+                    const personCard = document.querySelector(`.person-card[data-id="${personId}"]`);
+                    personCard.classList.add('person-complete');
+                    
+                    // 显示完成提示
+                    showToast(`${personCard.querySelector('h3').textContent}的所有信息已匹配完成！`, "success");
+                }
+            }
+
+            // 检查游戏是否完成
+            function checkGameCompletion() {
+                // 检查所有人物是否都已完成
+                const allCompleted = Object.values(gameState.personCompleted).every(completed => completed);
+                
+                if (allCompleted) {
+                    // 更新游戏统计
+                    correctStats.textContent = gameState.correctConnections;
+                    totalStats.textContent = gameState.totalConnections;
+                    const accuracy = gameState.totalConnections > 0 
+                        ? Math.round((gameState.correctConnections / gameState.totalConnections) * 100) 
+                        : 0;
+                    accuracyStats.textContent = `${accuracy}%`;
+                    
+                    // 显示完成提示
+                    showToast("恭喜你完成了所有匹配！", "success");
+                    
+                    // 播放庆祝音效
+                    if (gameState.soundEnabled) {
+                        playSound(celebrationSound);
+                    }
+                    
+                    // 显示撒花特效
+                    startConfetti();
+                    
+                    // 显示游戏结束弹窗
+                    setTimeout(() => {
+                        gameOverModal.classList.add('active');
+                    }, 2000);
+                    
+                    // 5秒后隐藏撒花特效
+                    setTimeout(() => {
+                        stopConfetti();
+                    }, 5000);
+                }
+            }
+
+            // 重置游戏
+            function resetGame() {
+                // 隐藏撒花特效
+                stopConfetti();
+                
+                // 隐藏游戏结束弹窗
+                gameOverModal.classList.remove('active');
+                
+                // 清除连线
+                document.querySelectorAll('.connection-line').forEach(line => {
+                    if (line.parentNode) {
+                        line.parentNode.removeChild(line);
+                    }
+                });
+                
+                gameState.connections = [];
+                gameState.correctConnections = 0;
+                gameState.totalConnections = 0;
+                Object.keys(gameState.personCompleted).forEach(key => {
+                    gameState.personCompleted[key] = false;
+                });
+                
+                // 重置选择
+                if (gameState.selectedPerson) {
+                    gameState.selectedPerson.classList.remove('bg-blue-100');
+                    gameState.selectedPerson = null;
+                }
+                
+                if (gameState.selectedInfo) {
+                    gameState.selectedInfo.classList.remove('bg-blue-100');
+                    gameState.selectedInfo = null;
+                }
+                
+                // 重置卡片样式
+                personCards.forEach(card => {
+                    card.classList.remove('border-secondary', 'person-complete');
+                });
+                
+                // 随机重新排序信息点
+                shuffleInfoCards();
+                
+                // 重新绑定信息点事件
+                bindInfoCardEvents();
+            }
+
+            // 设置音量
+            function setVolume(volume) {
+                gameState.volume = volume;
+                const volumeDecimal = volume / 100;
+                successSound.volume = volumeDecimal;
+                failSound.volume = volumeDecimal;
+                celebrationSound.volume = volumeDecimal;
+                
+                // 更新UI
+                volumeSlider.value = volume;
+                volumeValue.textContent = `${volume}%`;
+                
+                // 更新音量图标
+                if (volume === 0) {
+                    volumeIcon.className = 'fa fa-volume-off text-primary';
+                    gameState.soundEnabled = false;
+                } else {
+                    volumeIcon.className = volume < 50 
+                        ? 'fa fa-volume-down text-primary' 
+                        : 'fa fa-volume-up text-primary';
+                    gameState.soundEnabled = true;
+                }
+            }
+
+            // 调整音量
+            function adjustVolume() {
+                const volume = parseInt(volumeSlider.value);
+                setVolume(volume);
+            }
+
+            // 播放音效
+            function playSound(soundElement) {
+                soundElement.currentTime = 0;
+                soundElement.play().catch(e => console.log("Audio play failed:", e));
+            }
+            
+            // 显示提示
+            function showToast(message, type) {
+                toast.textContent = message;
+                toast.className = `toast toast-${type}`;
+                toast.classList.remove('hidden');
+                
+                setTimeout(() => {
+                    toast.classList.add('hidden');
+                }, 3000);
+            }
+            
+            // 创建撒花特效
+            function startConfetti() {
+                confetti.innerHTML = '';
+                confetti.style.display = 'block';
+                
+                const colors = ['#ff6b6b', '#ff8e8e', '#ffa0a0', '#ffb2b2', '#ffc4c4', '#ffd6d6', '#ffe8e8', '#ff9f43', '#ffb069', '#ffc18f', '#ffd2b5', '#ffe3db', '#48dbfb', '#6bdffd', '#8ee3fe', '#b0e7ff', '#d3ebff', '#7efff5', '#a1fff9', '#c4fffc', '#e6fffe', '#63cdda', '#85d8e0', '#a8e2e7', '#caeced', '#8854d0', '#a077d7', '#b89ade', '#d0bde5', '#e8def2'];
+                
+                for (let i = 0; i < 150; i++) {
+                    const confettiPiece = document.createElement('div');
+                    confettiPiece.className = 'confetti-piece';
+                    confettiPiece.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                    confettiPiece.style.left = `${Math.random() * 100}%`;
+                    confettiPiece.style.animationDelay = `${Math.random() * 3}s`;
+                    confettiPiece.style.animationDuration = `${2 + Math.random() * 3}s`;
+                    confettiPiece.style.transform = `rotate(${Math.random() * 360}deg)`;
+                    confetti.appendChild(confettiPiece);
+                }
+            }
+            
+            // 停止撒花特效
+            function stopConfetti() {
+                confetti.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+
+</html>    
